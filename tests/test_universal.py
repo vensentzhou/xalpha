@@ -46,7 +46,7 @@ def test_get_fund():
 
 
 def test_get_fund_pt():
-    df = xa.get_daily("pt-F100032")
+    df = xa.get_daily("pt-F100032", start="20191201")
     assert round(df[df["date"] < "2020-01-01"].iloc[-1]["bond_ratio"], 2) == 0.08
 
 
@@ -227,7 +227,7 @@ def test_get_hzindex():
     assert len(xa.get_daily("HZ999002")) > 100
 
 
-@pytest.mark.skip(reason="esunny website down")
+# @pytest.mark.skip(reason="esunny website down")
 def test_get_es():
     df = xa.get_daily("ESCI000302", start="20190419", end="2019/04/22")
     assert round(df.iloc[-1]["settlement"], 2) == 1074.80
@@ -270,3 +270,9 @@ def test_get_ttjj_rt_oversea():
 def test_ttjj_oversea_daily():
     df = xa.get_daily("F968054", start="2019-05-01", end="20190606")
     assert df.iloc[-1]["close"] == 10.18
+
+
+def test_get_futu():
+    df = xa.get_daily("fu-03690.HK", start="2021-01-01")
+    assert df.iloc[0]["open"] == 293.4
+    df = xa.get_daily("fu-BNO.US", start="2021-01-01")

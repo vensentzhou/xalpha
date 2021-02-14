@@ -514,6 +514,38 @@ def get_fundshare_byjq(code, **kws):
     return df
 
 
+@lru_cache(maxsize=1024)
+def get_futu_id(code):
+    r = rget("https://www.futunn.com/stock/{code}".format(code=code))
+    sind = r.text.find("securityId")
+    futuid = r.text[sind : sind + 30].split("=")[1].split(";")[0].strip(" ").strip("'")
+    sind = r.text.find("marketType")
+    market = r.text[sind : sind + 30].split("=")[1].split(";")[0].strip().strip("''")
+    return futuid, market
+
+
+def get_futu_historical(code, start=None, end=None):
+    fid, market = get_futu_id(code)
+    r = rget(
+        "https://www.futunn.com/new-quote/kline?security_id={fid}&type=2&market_type={market}".format(
+            fid=fid, market=market
+        )
+    )
+    df = pd.DataFrame(r.json()["data"]["list"])
+    df["date"] = df["k"].map(
+        lambda s: dt.datetime.fromtimestamp(s)
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .replace(tzinfo=None)
+    )
+    df["open"] = df["o"] / 1000
+    df["close"] = df["c"] / 1000
+    df["high"] = df["h"] / 1000
+    df["low"] = df["l"] / 1000
+    df["volume"] = df["v"]
+    df = df.drop(["k", "t", "o", "c", "h", "l", "v"], axis=1)
+    return df
+
+
 def get_historical_fromsp(code, start=None, end=None, region="us", **kws):
     """
     标普官网数据源
@@ -869,7 +901,7 @@ def get_bond_rates(rating, date=None):
     """
     rating = rating.strip()
     rating_uid = {
-        "N": "2c9081e50a2f9606010a3068cae70001",
+        "N": "2c9081e50a2f9606010a3068cae70001",  # 国债
         "AAA": "2c9081e50a2f9606010a309f4af50111",
         "AAA-": "8a8b2ca045e879bf014607ebef677f8e",
         "AA+": "2c908188138b62cd01139a2ee6b51e25",
@@ -878,6 +910,11 @@ def get_bond_rates(rating, date=None):
         "A+": "2c9081e91b55cc84011be40946ca0925",
         "A": "2c9081e91e6a3313011e6d438a58000d",
         "A-": "8a8b2ca04142df6a014148ca880f3046",
+        "A": "2c9081e91e6a3313011e6d438a58000d",
+        "BBB+": "2c9081e91ea160e5011eab1f116c1a59",
+        "BBB": "8a8b2ca0455847ac0145650780ad68fb",
+        "BB": "8a8b2ca0455847ac0145650ba23b68ff",
+        "B": "8a8b2ca0455847ac0145650c3d726901",
     }
     # 上边字典不全，非常欢迎贡献 ：）
     def _fetch(date):
@@ -1002,6 +1039,8 @@ def _get_daily(
             25. 形如 HZ999001 HZ999005 格式的数据，代表了华证系列指数 http://www.chindices.com/indicator.html#
 
             26. 形如 B-AA+.3 格式的数据，代表了 AA+ 企业债三年久期利率数据 (每周)
+
+            27. 形如 fu-00700.HK 或 fu-BA.US 格式的数据，代表了来自 https://www.futunn.com/stock/BA-US 的日线行情数据
 
     :param start: str. "20200101", "2020/01/01", "2020-01-01" are all legal. The starting date of daily data.
     :param end: str. format is the same as start. The ending date of daily data.
@@ -1137,6 +1176,10 @@ def _get_daily(
 
     elif _from == "B":
         df = get_bond_rates_range(code, start=start, end=end)
+
+    elif _from == "fu":
+        code = code.replace(".", "-")
+        df = get_futu_historical(code, start=start, end=end)
 
     elif _from == "ycharts":
         df = get_historical_fromycharts(
@@ -1583,9 +1626,21 @@ def get_rt_from_ttjj(code):
             ),
             str(s.findAll("dt")[1]).split("(")[1].split(")")[0][7:],
         )
-        estimate = s.select("#gz_gsz")[0].text
+        estimate = s.select("span[id=gz_gsz]")[0].text  # after loading
         if estimate == "--":
-            estimate = None
+            gsz = rget(
+                "http://fundgz.1234567.com.cn/js/{code}.js".format(code=code),
+                headers={
+                    "Host": "fundgz.1234567.com.cn",
+                    "Referer": "http://fund.eastmoney.com/",
+                },
+            )
+            try:  # in case eval error
+                gsz_dict = eval(gsz.text[8:-2])
+                estimate = _float(gsz_dict["gsz"])
+                estimate_time = gsz_dict["gztime"]
+            except:
+                estimate = None
         else:
             try:
                 estimate = _float(estimate)
@@ -1601,7 +1656,10 @@ def get_rt_from_ttjj(code):
     status = s.select("span[class='staticCell']")[0].text.strip()
     tb = s.select("div.infoOfFund > table >tr>td")
     infol = [i.text for i in tb]
-
+    try:
+        estimate_time
+    except NameError:
+        estimate_time = None
     return {
         "name": name,
         "time": date,
@@ -1615,6 +1673,7 @@ def get_rt_from_ttjj(code):
         "manager": infol[2].split("：")[1],
         "company": infol[4].split("：")[1],
         "estimate": estimate,
+        "estimate_time": estimate_time,
     }
     # 是否有美元份额计价的基金会出问题？
 

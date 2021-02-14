@@ -376,6 +376,8 @@ class trade:
                     feelabel = feelabel - 0.5
                     if abs(feelabel) < 1e-4:
                         feelabel = 0
+                    else:
+                        feelabel *= 100
                 else:
                     feelabel = None
                 value = int(value * 100) / 100
@@ -441,12 +443,15 @@ class trade:
 
                 if value > 0:  # value stands for purchase money
                     feelabel = 100 * value - int(100 * value)
+
                     if int(10 * feelabel) == 5:
-                        feelabel = feelabel - 0.5
+                        feelabel = (feelabel - 0.5) * 100
                     else:
                         feelabel = None
                     value = int(value * 100) / 100
-                    rdate, dcash, dshare = self.aim.shengou(value, date, fee=feelabel)
+                    rdate, dcash, dshare = self.aim.shengou(
+                        value, date, fee=feelabel
+                    )  # shengou fee is in the unit of percent, different than shuhui case
                     rem = rm.buy(rem, dshare, rdate)
 
                 elif value < -0.005:  # value stands for redemp share
@@ -749,7 +754,7 @@ class itrade(trade):
             ):
                 self.type_ = "场内基金"
             elif code.startswith("SH11") or code.startswith("SZ12"):
-                if self.name.endswith("转债"):
+                if self.name.endswith("转债") or self.name.endswith("转2"):
                     self.type_ = "可转债"
                 else:
                     self.type_ = "债券"

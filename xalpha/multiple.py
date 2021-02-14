@@ -67,6 +67,7 @@ class mul:
             property = {}
         self.is_in = False
         if fundtradeobj:
+            fundtradeobj = list(fundtradeobj)
             for t in fundtradeobj:
                 if isinstance(t, itrade):
                     self.is_in = True
@@ -79,7 +80,7 @@ class mul:
         fundcodelist = [f.code for f in fundtradeobj]
         if status is not None:
             for code in status.columns:
-                if code == "date":
+                if code == "date" or code.startswith("#"):
                     continue
                 # r1, d2, v4 p = r+d+v
                 if code in fundcodelist:

@@ -768,10 +768,24 @@ class CBCalculator:
             float(re.search(r"[\D]*([\d]*.[\d]*)[\s]*\%", s).group(1))
             for s in re.split("、|，", b.select("td[id=cpn_desc]")[0].string)
         ]
-        self.rlist.append(float(b.select("td[id=redeem_price]")[0].string))
+        td_redeem_price = b.select("td[id=redeem_price]")[0]
+        if td_redeem_price.sup:
+            redeem_price = float(
+                re.match(
+                    r"\S+，合计到期赎回价(\d\d\d\.\d\d)元", td_redeem_price.sup["title"]
+                ).group(1)
+            )
+            logger.info(
+                "{}: redeem_price {} obtained from superscript".format(
+                    code, redeem_price
+                )
+            )
+        else:
+            redeem_price = float(td_redeem_price.string)
+        self.rlist.append(redeem_price)
         self.rlist[-1] -= self.rlist[-2]  # 最后一年不含息返多少
         self.scode = (
-            b.select("td[class=jisilu_nav]")[0].contents[1].string.split("-")[1].strip()
+            b.select("td[class=jisilu_nav]")[0].contents[1].text.split("-")[1].strip()
         )
         self.scode = ttjjcode(self.scode)  # 标准化股票代码
         if not zgj:
@@ -780,6 +794,8 @@ class CBCalculator:
             self.zgj = zgj
         self.rating = b.select("td[id=rating_cd]")[0].string.strip()
         self.enddate = b.select("td[id=maturity_dt]")[0].string
+        self.zhanbi = b.select("td[id=convert_amt_ratio2]")[0].string.strip()
+        self.shares = float(b.select("td[id=curr_iss_amt]")[0].string.strip())
 
     def process_byday(self, date=None):
         if not date:
@@ -813,7 +829,7 @@ class CBCalculator:
         ) * np.sqrt(244)
         if not self.refvolatility:
             self.volatility = 0.17
-            if self.rating in ["A-", "A", "A+"]:
+            if self.rating in ["A-", "A", "A+"] or self.rating.startswith("B"):
                 self.volatility = 0.25
             elif self.rating in ["AA-"]:
                 self.volatility = 0.2
@@ -839,9 +855,9 @@ class CBCalculator:
         ).days
         if not self.refbondrate:
             ratestable = get_bond_rates(self.rating, self.date_obj.strftime("%Y-%m-%d"))
-            if self.rating in ["A", "A+", "AA-"]:
+            if self.rating in ["A", "A+", "AA-"] or self.rating.startswith("B"):
                 ## AA 到 AA- 似乎是利率跳高的一个坎
-                cutoff = 2
+                cutoff = 3  # changed from 2 by considering more credit risk
             else:
                 cutoff = 4
             if self.days / 365 > cutoff:
@@ -886,6 +902,8 @@ class CBCalculator:
             "years": self.days / 365,
             "issuedate": self.issuedate,
             "date": self.date_obj.strftime("%Y-%m-%d"),
+            "zhanbi": self.zhanbi,
+            "remaining": self.shares,
         }
         d["bond_value"] = cb_bond_value(self.issuedate, self.rlist, self.bondrate)
         d["ytm_wo_tax"] = cb_ytm(self.issuedate, self.rlist, self.cbp)
